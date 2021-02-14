@@ -15,3 +15,9 @@ operation_incomplete = 'Operation was not completed!'
 dir_create_failed = 'Unable to create a folder!'
 
 dir_use_diff_name = 'Folder with same name already exists in this location!'
+
+instructions = '<b>Commands</b>\n'\
+                '/help - to show this message\n'\
+                '/add - with reply to a file, to add a file\n'\
+                '/add n - where n is the number of files to add\n'\
+                '/delete - to delete files or folder'

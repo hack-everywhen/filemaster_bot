@@ -17,6 +17,10 @@ class Handler:
         self.bot.add_event_handler(self.delete_files, events.NewMessage(pattern='/delete', forwards=False))
         self.bot.add_event_handler(self.help, events.NewMessage(pattern='/help', forwards=False))
 
+    async def help(self, event):
+        bot = self.bot
+        await bot.send_message(event.sender_id, messages.instructions)
+
     async def files(self, event):
         bot = self.bot
         db = self.db
