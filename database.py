@@ -19,11 +19,11 @@ class Database:
     def create_table(self, user_id):
         connection = self.connection
         cursor = connection.cursor()
-        cursor.execute('''CREATE TABLE "{}" (id INT PRIMARY KEY NOT NULL ,
+        cursor.execute('''CREATE TABLE "{}" (id TEXT ,
                                             type TEXT NOT NULL ,
                                             name TEXT ,
                                             path TEXT,
-                                            fpath TEXT)'''.format(str(user_id)))
+                                            fpath TEXT UNIQUE)'''.format(str(user_id)))
         cursor.execute('''INSERT INTO "{}" (id, type, name, path, fpath) 
                             VALUES (0, 'folder', 'root', 'master', '/')'''.format(str(user_id)))
         connection.commit()
@@ -39,16 +39,40 @@ class Database:
         connection = self.connection
         cursor = connection.cursor()
         fpath = path + file_name
-        cursor.execute('''INSERT INTO "{}" (id, type, name, path, fpath)
-                            VALUES (%s, %s, %s, %s, %s)'''.format(str(user_id)),
-                       (file_id, 'file', file_name, path, fpath, ))
-        connection.commit()
+        try:
+            cursor.execute('''INSERT INTO "{}" (id, type, name, path, fpath)
+                                VALUES (%s, %s, %s, %s, %s)'''.format(str(user_id)),
+                           (file_id, 'file', file_name, path, fpath, ))
+            connection.commit()
+        except psycopg2.Error as e:
+            return 'EXISTS'
         return 'OK'
+
+    def create_folder(self, user_id, name, path):
+        connection = self.connection
+        cursor = connection.cursor()
+        fpath = path + name + '/'
+        try:
+            cursor.execute('''INSERT INTO "{}" (type, name, path, fpath)
+                                VALUES (%s, %s, %s, %s)'''.format(str(user_id)),
+                           ('folder', name, path, fpath, ))
+            connection.commit()
+        except psycopg2.Error as e:
+            print(e.pgerror)
+            return 'EXISTS'
+        return 'OK'
+
+    def get(self, user_id, fpath):
+        connection = self.connection
+        cursor = connection.cursor()
+        cursor.execute('''SELECT * FROM "{}" WHERE fpath=%s'''.format(str(user_id)), (fpath, ))
+        file = cursor.fetchone()
+        return file
 
     def get_path_folders(self, user_id, path):
         connection = self.connection
         cursor = connection.cursor()
-        cursor.execute('''SELECT * FROM (?) WHERE path=(?) AND type=(?)''', user_id, path, 'folder')
+        cursor.execute('''SELECT * FROM "{}" WHERE path="%s"'''.format(str(user_id)), (path, ))
         folders = cursor.fetchall()
         return folders
 
@@ -57,6 +81,20 @@ class Database:
             return '/'
         connection = self.connection
         cursor = connection.cursor()
-        cursor.execute('''SELECT * FROM (?) WHERE fpath=(?)''', user_id, path)
+        cursor.execute('''SELECT * FROM "{}" WHERE fpath='{}' '''.format(str(user_id), path))
         parent = cursor.fetchall()
+        print(parent)
         return parent[0][3]
+
+    def delete_file(self, user_id, fpath):
+        connection = self.connection
+        cursor = connection.cursor()
+        cursor.execute('''DELETE FROM "{}" WHERE fpath='{}' '''.format(str(user_id), fpath))
+        connection.commit()
+
+    def delete_folder(self, user_id, fpath):
+        connection = self.connection
+        cursor = connection.cursor()
+        cursor.execute('''DELETE FROM "{}" WHERE fpath='{}' '''.format(str(user_id), fpath))
+        cursor.execute('''DELETE FROM "{}" WHERE path='{}' '''.format(str(user_id), fpath))
+        connection.commit()

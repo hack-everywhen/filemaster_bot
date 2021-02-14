@@ -30,15 +30,13 @@ class FileManager:
         bot = self.bot
         db = self.db
         contents = db.open_directory(user_id, directory)
-        if len(contents) == 0:
+        if len(contents) == 0 and directory == '/':
             await bot.send_message(user_id, message="Add some files first using /add. Please see /help if you are new!")
             return
         parent_directory = db.get_parent_directory(user_id, directory)
-        print("parent dir:" + parent_directory)
         message = 'You are here -- > <code>{}</code>'.format(directory)
         keyboard = []
         for r in contents:
-            print("for loop")
             if r[1] == 'file':
                 if act == 'ADD':
                     # skip displaying files when action is adding a new file
@@ -56,16 +54,17 @@ class FileManager:
             keyboard.append([Button.inline('Delete this folder', data='delete_dir')])
         if directory != '/':
             keyboard.append([Button.inline('<<Back<<', data=parent_directory)])
-        print(keyboard)
         next_path = await self.simple_select(user_id, keyboard, message)
         return next_path
 
     async def add_file_to_directory(self, user_id, document, path):
         bot = self.bot
         db = self.db
-        status = db.touch(user_id, id=document.id, name=document.file_name, path=path)
+        status = db.touch(user_id=user_id, file_id=document.id, file_name=document.name, path=path)
         if status == 'OK':
             return "added!"
+        elif status == 'EXISTS':
+            return "already exists!"
         else:
             return "NOT added⚠️"
 
@@ -75,9 +74,13 @@ class FileManager:
         ins = '<code>{}</code>\nSend folder name'.format(path)
         err = 'Please do not use *, /, \\ or other special characters'
         folder_name = await self.communicate(user_id, ins, err, r'(^(\w+\s*)+$)')
-        full_path = path + folder_name
-        if db.create_folder(user_id, path, full_path):
+        full_path = path + folder_name + '/'
+        status = db.create_folder(user_id, folder_name, path)
+        if status == 'OK':
             return full_path
+        elif status == 'EXISTS':
+            await bot.send_message(user_id, message=messages.dir_use_diff_name)
+            return
         else:
             await bot.send_message(user_id, message=messages.dir_create_failed)
             return

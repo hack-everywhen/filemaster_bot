@@ -1,3 +1,5 @@
+import copy
+
 from telethon import events
 from telethon.tl.types import InputMessagesFilterDocument
 
@@ -12,6 +14,8 @@ class Handler:
         self.fm = FileManager(bot, database)
         self.bot.add_event_handler(self.files, events.NewMessage(pattern='^[^(/add)$]', forwards=False))
         self.bot.add_event_handler(self.add_files, events.NewMessage(pattern='/add', forwards=False))
+        self.bot.add_event_handler(self.delete_files, events.NewMessage(pattern='/delete', forwards=False))
+        self.bot.add_event_handler(self.help, events.NewMessage(pattern='/help', forwards=False))
 
     async def files(self, event):
         bot = self.bot
@@ -28,12 +32,13 @@ class Handler:
             content = await fm.directory(event.sender_id, current_path)
             if content is None:
                 return
-            current_path = content[4]
-            content_type = content[1]
-        if type != 'file':
+            file = db.get(event.sender_id, content)
+            current_path = content
+            content_type = file[1]
+        if content_type != 'file':
             # throw error
             return
-        await bot.send_message(event.sender_id, content[2], parse_mode='html', file=content[0])
+        await bot.send_message(event.sender_id, file[2], parse_mode='html', file=file[0])
 
     async def add_files(self, event):
         bot = self.bot
@@ -47,47 +52,77 @@ class Handler:
         if len(args) != 2 and event.message.is_reply is False:
             await bot.send_message(event.sender_id, messages.add_instructions_normal)
             return
-        if args:
+        if len(args) == 2:
             offset_id = event.message.id
-            limit = int(args)
+            limit = int(args[1])
             if 25 < limit < 0:
                 await bot.send_message(event.sender_id, messages.add_instructions_invalid_bulk)
                 return
             documents = []
-            async for message in bot.iter_messages(event.sender_id, filter=InputMessagesFilterDocument, offset_id=offset_id,
-                                                   limit=limit):
+            async for message in bot.iter_messages(event.sender_id, filter=InputMessagesFilterDocument,
+                                                   offset_id=offset_id, limit=limit):
 
                 # await self.add(event, message.document)
-                documents.append(message.document)
+                documents.append(message.file)
                 await self.add(documents)
                 return
         elif event.message.is_reply is True:
-            file_message = event.message.get_reply_message()
-            if file_message.document:
-                await self.add(event, [file_message.document])
-                print("do something cool")
+            file_message = await event.message.get_reply_message()
+            if file_message.file:
+                await self.add(event, [file_message.file])
             else:
                 await bot.send_message(event.sender_id, messages.add_instructions_no_proper_reply)
             return
         else:
             await bot.send_message(event.sender_id, messages.add_instructions_normal)
 
-    async def add(self, event, documents):
+    async def add(self, event, files):
         fm = self.fm
         bot = self.bot
-        current_path, action = '/', 'folder'
-        while action != 'add_file':
-            action = await fm.directory(event.sender_id, current_path)
-            current_path = action[4]
-            if action == 'make_dir':
-                new_dir_path = await fm.make_directory(event.sender_id, current_path)
-                current_path = new_dir_path
-            if action is None:
+        current_path = '/'
+        next_path = '/'
+        while next_path != 'add_file':
+            # action = current_path
+            prev_path = copy.deepcopy(next_path)
+            next_path = await fm.directory(event.sender_id, next_path, act='ADD')
+            if next_path is None:
                 await bot.send_message(event.sender_id, messages.operation_incomplete)
                 return
-        progress = bot.send_message(event.sender_id, 'Adding...')
-        async for document in documents:
-            status = await fm.add_file_to_directory(event.sender_id, document, current_path)
-            status_message = '<code>{}</code> {}'.format(document.file_name, status)
-            progress.edit(text=status_message)
+            if next_path == 'make_dir':
+                new_dir_path = await fm.make_directory(event.sender_id, prev_path)
+                if new_dir_path == 'EXISTS':
+                    return
+                next_path = new_dir_path
+                print("created p: "+next_path)
+            # print(next_path)
+        progress = await bot.send_message(event.sender_id, 'Adding...')
+        for file in files:
+            status = await fm.add_file_to_directory(event.sender_id, file, prev_path)
+            status_message = '<code>{}</code> {}'.format(file.name, status)
+            await progress.edit(text=status_message)
         return
+
+    async def delete_files(self, event):
+        fm = self.fm
+        db = self.db
+        bot = self.bot
+        path = '/'
+        while isinstance(path, str):
+            # action = current_path
+            prev_path = copy.deepcopy(path)
+            path = await fm.directory(event.sender_id, path, act='DELETE')
+            file = db.get(event.sender_id, path)
+            if file[1] == 'file':
+                db.delete_file(event.sender_id, path)
+            if path is None:
+                await bot.send_message(event.sender_id, messages.operation_incomplete)
+                return
+            if path == 'delete_dir':
+                caution = 'Are you sure you want to delete <code>{}</code> and everything inside it?'.format(prev_path)
+                confirm = await fm.simple_select(event.sender_id, ["Yes", "No"], caution)
+                if confirm == 'Yes':
+                    db.delete_folder(event.sender_id, prev_path)
+                    await bot.send_message(event.sender_id, 'Folder and it\'s contents deleted!')
+                    return
+                else:
+                    path = prev_path
