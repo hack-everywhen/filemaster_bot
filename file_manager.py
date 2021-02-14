@@ -1,7 +1,9 @@
 import itertools
+import re
 
 from telethon import events, Button
 # import config_vars
+import messages
 
 
 class Helper:
@@ -57,3 +59,37 @@ class FileManager:
         print(keyboard)
         next_path = await self.simple_select(user_id, keyboard, message)
         return next_path
+
+    async def add_file_to_directory(self, user_id, document, path):
+        bot = self.bot
+        db = self.db
+        status = db.touch(user_id, id=document.id, name=document.file_name, path=path)
+        if status == 'OK':
+            return "added!"
+        else:
+            return "NOT added⚠️"
+
+    async def make_directory(self, user_id, path):
+        bot = self.bot
+        db = self.db
+        ins = '<code>{}</code>\nSend folder name'.format(path)
+        err = 'Please do not use *, /, \\ or other special characters'
+        folder_name = await self.communicate(user_id, ins, err, r'(^(\w+\s*)+$)')
+        full_path = path + folder_name
+        if db.create_folder(user_id, path, full_path):
+            return full_path
+        else:
+            await bot.send_message(user_id, message=messages.dir_create_failed)
+            return
+
+    async def communicate(self, user, instruction, error, pattern=None):
+        bot = self.bot
+        cancel_key = [Button.inline('Cancel', data='CANCEL')]
+        async with bot.conversation(user) as conv:
+            await bot.send_message(user, instruction, parse_mode='html', buttons=cancel_key)
+            response = (await conv.get_response(0)).message
+            if pattern:
+                while re.match(pattern, response) is None:
+                    await bot.send_message(user, error, parse_mode='html', buttons=cancel_key)
+                    response = (await conv.get_response(0)).message
+            return response

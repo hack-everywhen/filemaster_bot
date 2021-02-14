@@ -35,6 +35,16 @@ class Database:
         files = cursor.fetchall()
         return files
 
+    def touch(self, user_id, file_id, file_name, path):
+        connection = self.connection
+        cursor = connection.cursor()
+        fpath = path + file_name
+        cursor.execute('''INSERT INTO "{}" (id, type, name, path, fpath)
+                            VALUES (%s, %s, %s, %s, %s)'''.format(str(user_id)),
+                       (file_id, 'file', file_name, path, fpath, ))
+        connection.commit()
+        return 'OK'
+
     def get_path_folders(self, user_id, path):
         connection = self.connection
         cursor = connection.cursor()
